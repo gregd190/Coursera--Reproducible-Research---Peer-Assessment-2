@@ -1,0 +1,146 @@
+---
+title: "US Weather Event Data Analysis"
+author: "Greg D"
+date: "24 August 2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(dplyr)
+```
+#Human Health and Property Damage of Weather Event Types Across the United States
+
+##Synopsis
+
+Weather evens can cause significant human harm and economic damage. Health effects and economic cost were studied by weather event type using data from the NOAA Storm Database. 
+
+##Data Processing
+
+The database is downloaded from the source, extracted and loaded into R as a data object 'rawdata':
+
+```{R cache=TRUE}
+url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+download.file (url, destfile = "data.csv.bz2", method="curl")
+rawdata <- read.csv("data.csv.bz2", sep=",", header=TRUE, na.strings = c("NA","",'#DIV/0!'))
+```
+
+
+Quick inspection of data file to ensure the above worked correctly and get an idea of what
+the data looks like:
+
+```{R}
+
+dim(rawdata)
+head(rawdata)
+```
+
+
+This study looks only at population health and economic consequences of weather events by event type. Therefore only a subset of the columns are required. 
+ 
+```{R}
+procdata <- rawdata[, c("EVTYPE", "FATALITIES","INJURIES","PROPDMG","PROPDMGEXP","CROPDMG", "CROPDMGEXP")]
+head(procdata)
+```
+
+Note that both PROPDMG and CROPDMG have a multiplier column. These multipliers are codified, so they first must be converted to real numbers. 
+
+
+```{R}
+unique(procdata$PROPDMGEXP)
+
+unique(procdata$CROPDMGEXP)
+
+procdata$PDMULTIPLIER <- 0
+
+procdata$PDMULTIPLIER[procdata$PROPDMGEXP %in% c('h','H')] <- 100
+procdata$PDMULTIPLIER[procdata$PROPDMGEXP %in% c('k','K')] <- 1000
+procdata$PDMULTIPLIER[procdata$PROPDMGEXP %in% c('m','M')] <- 1e+06
+procdata$PDMULTIPLIER[procdata$PROPDMGEXP %in% c('b','B')] <- 1e+09
+procdata$PDMULTIPLIER[procdata$PROPDMGEXP == 1] <- 1e+1
+procdata$PDMULTIPLIER[procdata$PROPDMGEXP == 2] <- 1e+2
+procdata$PDMULTIPLIER[procdata$PROPDMGEXP == 3] <- 1e+3
+procdata$PDMULTIPLIER[procdata$PROPDMGEXP == 4] <- 1e+4
+procdata$PDMULTIPLIER[procdata$PROPDMGEXP == 5] <- 1e+5
+procdata$PDMULTIPLIER[procdata$PROPDMGEXP == 6] <- 1e+6
+procdata$PDMULTIPLIER[procdata$PROPDMGEXP == 7] <- 1e+7
+procdata$PDMULTIPLIER[procdata$PROPDMGEXP == 8] <- 1e+8
+procdata$PDMULTIPLIER[is.na(procdata$PROPDMGEXP)] <- 1
+
+procdata$PROPDAMAGEVALUE <- procdata$PROPDMG*procdata$PDMULTIPLIER
+
+
+procdata$CDMULTIPLIER[procdata$CROPDMGEXP %in% c('h','H')] <- 100
+procdata$CDMULTIPLIER[procdata$CROPDMGEXP %in% c('k','K')] <- 1000
+procdata$CDMULTIPLIER[procdata$CROPDMGEXP %in% c('m','M')] <- 1e+06
+procdata$CDMULTIPLIER[procdata$CROPDMGEXP %in% c('b','B')] <- 1e+09
+procdata$CDMULTIPLIER[procdata$CROPDMGEXP == 0] <- 1
+procdata$PDMULTIPLIER[procdata$PROPDMGEXP == 2] <- 1e+2
+procdata$CDMULTIPLIER[is.na(procdata$CROPDMGEXP)] <- 1
+
+procdata$CROPDAMAGEVALUE <- procdata$CROPDMG*procdata$CDMULTIPLIER
+
+
+```
+
+```{R}
+summary(procdata)
+```
+
+##Results
+
+###Population Harm
+
+Population harm, in terms of both fatalities and injuries, was investigated by event type.
+
+```{R}
+dt <- data.table(procdata)
+
+totFatalities <- aggregate(FATALITIES ~ EVTYPE, data=procdata, FUN=sum)
+totFatalities <- arrange(totFatalities, desc(FATALITIES))
+
+totInjuries <- aggregate(INJURIES ~ EVTYPE, data=procdata, FUN=sum)
+totInjuries <- arrange(totInjuries, desc(INJURIES))
+
+
+par(mfrow=c(2,1))
+barplot(totFatalities$FATALITIES[1:20], col =heat.colors(20), names.arg=totFatalities$EVTYPE[1:20], cex.names=0.7, las=2, main="Total Fatalities by Event Type", ylab="Total Number of Fatalities")
+
+barplot(totInjuries$INJURIES[1:20], col =heat.colors(20), names.arg=totInjuries$EVTYPE[1:20], cex.names=0.7, las=2, main="Total Injuries by Event Type", ylab="Total Number of Injuries")
+
+```
+
+Tornados were responsible for both the highest number of fatalities and the highest number of injuries over the studied period. 
+
+###Economic Cost:
+
+As for population harm, economic cost was investigated by event type. 
+
+The dataset separates economic damage into property damage ('PROPDMG') and crop damage ('CROPDMG').
+
+
+###Economic Damage
+```{R}
+
+totPropDamage <- aggregate(PROPDAMAGEVALUE ~ EVTYPE, data=procdata, FUN=sum)
+totPropDamage <- arrange(totPropDamage, desc(PROPDAMAGEVALUE))
+
+totCropDamage <- aggregate(CROPDAMAGEVALUE ~ EVTYPE, data=procdata, FUN=sum)
+totCropDamage <- arrange(totCropDamage, desc(CROPDAMAGEVALUE))
+
+totAggDamage <- aggregate(PROPDAMAGEVALUE+CROPDAMAGEVALUE ~ EVTYPE, data=procdata, FUN=sum)
+names(totAggDamage)[2]="AGGDAMAGEVALUE"
+totAggDamage <- arrange(totAggDamage, desc(AGGDAMAGEVALUE))
+
+par(mfrow=c(3,1))
+barplot(totPropDamage$PROPDAMAGEVALUE[1:10]/1e+9, col=heat.colors(10), names.arg=totPropDamage$EVTYPE[1:10], cex.names=0.7, cex.axis=0.7, las=2, main="Total Property Damage Cost by Event Type (Top 10)", ylab="Total Cost (billions $)")
+
+barplot(totCropDamage$CROPDAMAGEVALUE[1:10]/1e+9, col=heat.colors(10), names.arg=totCropDamage$EVTYPE[1:10], cex.names=0.7, cex.axis=0.7, las=2, main="Total Crop Damage by Event Type (Top 10)", ylab="Total Cost (billions $)")
+
+barplot(totAggDamage$AGGDAMAGEVALUE[1:10]/1e+9, col=heat.colors(10), names.arg=totAggDamage$EVTYPE[1:10], cex.names=0.7, cex.axis=0.7, las=2, main="Total Aggregated Damage by Event Type (Top 10)", ylab="Total Cost (billions $)")
+```
+
+It can be seen that floods produce the most property damage and cause the most economic damage overall, that drought causes the most damage to crops, and that property damage is of significantly greater cost than crop damage. 
